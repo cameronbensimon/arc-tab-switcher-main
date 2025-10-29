@@ -1,12 +1,10 @@
 # Arc Tab Switcher for Chrome
 
-
+![Demo Video](chrome-tiquo-video.mp4)
 
 A true Arc/Zen browser-style MRU (Most Recently Used) tab switcher and copy current tab for Chrome. Switch between your 5 most recent tabs instantly with a minimal, fast UI!
 
 **Sponsored by [Tiquo](https://www.tiquo.co/)**
-
-<video src="chrome-tiquo-video.mp4" width="100%" controls></video>
 
 
 
