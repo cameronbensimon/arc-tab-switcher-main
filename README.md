@@ -169,3 +169,15 @@ Feel free to customize and improve this extension! Some ideas:
 
 Free to use and modify for personal use. Enjoy! 🚀
 
+---
+
+## Sponsored by Tiquo
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="tiquo-logo-white.png">
+  <source media="(prefers-color-scheme: light)" srcset="tiquo-logo-black.png">
+  <img alt="Tiquo Logo" src="tiquo-logo-black.png" width="200">
+</picture>
+
+Running a hotel, restaurant, spa, or venue shouldn't require 20+ different tools. With Tiquo, every product, service, booking, form, contract, membership and transaction, flows through a single system – built for adaptability, scale, and AI. Simpler for staff, seamless for customers, smarter for the business.
+
