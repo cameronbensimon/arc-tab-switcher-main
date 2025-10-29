@@ -1,0 +1,245 @@
+/* Arc Tab Switcher Styles - Ultra Minimal MRU Design */
+
+#arc-tab-switcher-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: transparent;
+  backdrop-filter: none;
+  /* Reset any page zoom/transform/scale */
+  zoom: 1 !important;
+  transform: none !important;
+  font-size: 16px !important;
+  line-height: 1.5 !important;
+  -webkit-text-size-adjust: 100% !important;
+}
+
+.arc-switcher-container {
+  width: auto;
+  background: rgba(30, 30, 35, 0.98);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-direction: row;
+  padding: 12px;
+  pointer-events: auto;
+  gap: 8px;
+  zoom: 1 !important;
+  transform: scale(1) !important;
+  max-width: calc(5 * 160px + 4 * 8px + 24px);
+  transition: none !important;
+  animation: none !important;
+}
+
+.arc-switcher-header {
+  display: none;
+}
+
+.arc-search-container {
+  display: none;
+}
+
+.arc-search-icon {
+  display: none;
+}
+
+#arc-search-input {
+  display: none;
+}
+
+.arc-hint {
+  display: none;
+}
+
+.arc-tabs-grid {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  overflow: visible;
+  transition: none !important;
+  animation: none !important;
+  transform: none !important;
+}
+
+/* Hide scrollbar */
+.arc-tabs-grid::-webkit-scrollbar {
+  display: none;
+}
+
+.arc-tab-card {
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  padding: 10px !important;
+  position: relative;
+  overflow: visible;
+  flex-shrink: 0;
+  width: 160px !important;
+  height: 140px !important;
+  min-width: 160px !important;
+  max-width: 160px !important;
+  min-height: 140px !important;
+  max-height: 140px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  justify-content: flex-start !important;
+  gap: 4px !important;
+  transform: none !important;
+  zoom: 1 !important;
+  pointer-events: none !important;
+  cursor: default !important;
+  transition: none !important;
+  animation: none !important;
+  box-sizing: border-box !important;
+  will-change: auto !important;
+}
+
+.arc-tab-card.selected {
+  background: rgba(59, 130, 246, 0.3) !important;
+  border-radius: 12px !important;
+  box-shadow: none !important;
+  filter: none !important;
+  backdrop-filter: none !important;
+  width: 160px !important;
+  height: 140px !important;
+  padding: 10px !important;
+  transform: none !important;
+  transition: none !important;
+  animation: none !important;
+  box-sizing: border-box !important;
+  will-change: auto !important;
+}
+
+.arc-mru-badge {
+  display: none;
+}
+
+.arc-tab-preview {
+  width: 100% !important;
+  height: 96px !important;
+  min-height: 96px !important;
+  max-height: 96px !important;
+  position: relative;
+  background: rgba(255, 255, 255, 0.95);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  flex-shrink: 0;
+  transition: none !important;
+  animation: none !important;
+  transform: none !important;
+}
+
+.arc-tab-card.selected .arc-tab-preview {
+  width: 100% !important;
+  height: 96px !important;
+  min-height: 96px !important;
+  max-height: 96px !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  transition: none !important;
+  animation: none !important;
+  transform: none !important;
+}
+
+.arc-tab-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.arc-tab-favicon-large {
+  display: none;
+}
+
+.arc-tab-info {
+  width: 100% !important;
+  padding: 6px 4px 4px 4px !important;
+  background: transparent !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0 !important;
+  border-radius: 0 !important;
+  margin: 0 !important;
+  transition: none !important;
+  animation: none !important;
+  transform: none !important;
+  flex-shrink: 0 !important;
+}
+
+.arc-tab-title {
+  color: #ffffff;
+  font-size: 12px !important;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  line-height: 1.4 !important;
+  transition: none !important;
+  animation: none !important;
+  transform: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.arc-tab-favicon {
+  width: 14px !important;
+  height: 14px !important;
+  flex-shrink: 0 !important;
+  object-fit: contain !important;
+  transition: none !important;
+  animation: none !important;
+  transform: none !important;
+}
+
+.arc-tab-title span {
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  transition: none !important;
+  animation: none !important;
+  transform: none !important;
+}
+
+.arc-tab-url {
+  display: none;
+}
+
+.arc-current-badge {
+  display: none;
+}
+
+.arc-no-results {
+  display: none;
+}
+
+/* Box sizing reset and disable all animations */
+#arc-tab-switcher-overlay *,
+#arc-tab-switcher-overlay *::before,
+#arc-tab-switcher-overlay *::after {
+  box-sizing: border-box;
+  transition: none !important;
+  animation: none !important;
+  zoom: 1 !important;
+  transform-origin: center !important;
+  -webkit-text-size-adjust: 100% !important;
+}
+
