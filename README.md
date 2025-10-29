@@ -1,6 +1,8 @@
 # Arc Tab Switcher for Chrome
 
-A true Arc/Zen browser-style MRU (Most Recently Used) tab switcher for Chrome. Switch between your 5 most recent tabs instantly with a minimal, fast UI!
+A true Arc/Zen browser-style MRU (Most Recently Used) tab switcher and copy current tab for Chrome. Switch between your 5 most recent tabs instantly with a minimal, fast UI!
+
+**Sponsored by [Tiquo](https://www.tiquo.co/)**
 
 ## Features
 
@@ -14,7 +16,7 @@ A true Arc/Zen browser-style MRU (Most Recently Used) tab switcher for Chrome. S
 
 ## Installation
 
-### Method 1: Load Unpacked Extension (Developer Mode)
+### Step 1: Load Unpacked Extension (Developer Mode)
 
 1. Download or clone this extension folder
 2. Open Chrome and navigate to `chrome://extensions/`
@@ -23,15 +25,18 @@ A true Arc/Zen browser-style MRU (Most Recently Used) tab switcher for Chrome. S
 5. Select the `arc-tab-switcher` folder
 6. Done! The extension is now installed
 
-### Method 2: Change Keyboard Shortcut (Optional)
+### Step 2: Change Keyboard Shortcut
 
 If Ctrl+Q doesn't work or you want a different shortcut:
 
 1. Go to `chrome://extensions/shortcuts`
 2. Find "Arc Tab Switcher"
-3. Click the pencil icon next to "Toggle tab switcher"
-4. Press your desired key combination
-5. Click OK
+3. Click the pencil icon next to "Copy current page URL"
+4. Press your desired key combination (shift + command + C is recommended)
+5. Click the pencil icon next to "Toggle tab switcher"
+6. Press your desired key combination (control + Q or control + A is recommended)
+
+All done!
 
 ## Usage
 
@@ -39,24 +44,24 @@ If Ctrl+Q doesn't work or you want a different shortcut:
 
 The tab switcher tracks your 5 most recently used tabs and lets you cycle through them:
 
-**Press:** `Cmd+Q` (Mac) or `Ctrl+Q` (Windows/Linux)
+**Press:** your selected key combination
 - Visual UI appears instantly showing your 5 most recent tabs
 - Previous tab is pre-selected (index 1)
-- Keep pressing `Cmd+Q` to cycle forward through the list
+- Keep pressing the key combination to cycle forward through the list
 - **Release Cmd/Ctrl** to instantly switch to selected tab
 - Switcher stays open as long as you hold Cmd/Ctrl
 
 ### Navigation
 
 **Keyboard Controls:**
-- **Cmd+Q / Ctrl+Q** - Cycle to next tab (keep pressing to cycle through)
+- **Ctrl+Q** - Cycle to next tab (keep pressing to cycle through)
 - **Esc** - Cancel and close (return to current tab)
 
 That's it! Just two keys.
 
 ### Tips
 
-- ⚡ UI appears **instantly** when you press Cmd+Q - zero delay
+- ⚡ UI appears **instantly** when you press your key combination like Ctrl+Q - zero delay
 - 🎨 Selected tab is highlighted with blue border
 - ✅ Current tab has a green border
 - 🔄 **Instant key release detection** - exits immediately when you release Cmd/Ctrl key
@@ -153,17 +158,7 @@ This extension replicates Arc and Zen browser's exact MRU tab switching behavior
 - Detects Ctrl/Cmd key release just like native OS switchers
 - Works in Chrome, Edge, Brave, and other Chromium browsers
 - Customizable keyboard shortcuts
-- Clean horizontal card layout with page preview screenshots
-
-## Contributing
-
-Feel free to customize and improve this extension! Some ideas:
-
-- Add support for closing tabs from the switcher (Cmd+W)
-- Add tab previews/thumbnails if possible
-- Customize the number of recent tabs (currently 5)
-- Add custom themes and color schemes
-- Show tab memory or resource usage
+- Clean horizontal card layout with page preview tabs
 
 ## License
 
@@ -173,11 +168,13 @@ Free to use and modify for personal use. Enjoy! 🚀
 
 ## Sponsored by Tiquo
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="tiquo-logo-white.png">
-  <source media="(prefers-color-scheme: light)" srcset="tiquo-logo-black.png">
-  <img alt="Tiquo Logo" src="tiquo-logo-black.png" width="200">
-</picture>
+<a href="https://www.tiquo.co/" target="_blank">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="tiquo-logo-white.png">
+    <source media="(prefers-color-scheme: light)" srcset="tiquo-logo-black.png">
+    <img alt="Tiquo Logo" src="tiquo-logo-black.png" width="200">
+  </picture>
+</a>
 
-Running a hotel, restaurant, spa, or venue shouldn't require 20+ different tools. With Tiquo, every product, service, booking, form, contract, membership and transaction, flows through a single system – built for adaptability, scale, and AI. Simpler for staff, seamless for customers, smarter for the business.
+Running a hotel, restaurant, spa, or venue shouldn't require 20+ different tools. With [Tiquo](https://www.tiquo.co/), every product, service, booking, form, contract, membership and transaction, flows through a single system – built for adaptability, scale, and AI. Simpler for staff, seamless for customers, smarter for the business.
 
