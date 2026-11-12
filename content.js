@@ -137,6 +137,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           return true;
         }
 
+        // No DOM to render into (e.g. non-HTML document); let the background
+        // script fall back to switching tabs directly
+        if (!document.body) {
+          sendResponse({ success: false, error: "No document body to render switcher" });
+          return true;
+        }
+
         // Show UI immediately
         showSwitcher();
         // Start timer to auto-switch if user stops pressing the key (simulates key release)
@@ -223,7 +230,7 @@ function startAutoSwitchTimer() {
     if (filteredTabs[selectedIndex]) {
       switchToTab(filteredTabs[selectedIndex].id);
     }
-  }, 200000);
+  }, 2000);
 }
 
 // Move the selection by `delta` (1 = next, -1 = previous), wrapping around
