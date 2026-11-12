@@ -39,6 +39,8 @@ If Ctrl+Q doesn't work or you want a different shortcut:
 4. Press your desired key combination (shift + command + C is recommended)
 5. Click the pencil icon next to "Toggle tab switcher"
 6. Press your desired key combination (control + Q or control + A is recommended)
+7. Click the pencil icon next to "Cycle tab switcher backward"
+8. Press the same combination as above with Shift added (e.g. control + shift + Q)
 
 All done!
 
@@ -59,9 +61,11 @@ The tab switcher tracks your 5 most recently used tabs and lets you cycle throug
 
 **Keyboard Controls:**
 - **Ctrl+Q** - Cycle to next tab (keep pressing to cycle through)
+- **Ctrl+Shift+Q** - Cycle to previous tab (opens the switcher on the last tab if it isn't already open)
+- **Shift+Q** (while the switcher is open) - Move to the previous tab
 - **Esc** - Cancel and close (return to current tab)
 
-That's it! Just two keys.
+That's it! Just three keys.
 
 ### Tips
 

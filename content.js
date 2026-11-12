@@ -7,6 +7,11 @@ let selectedIndex = 0;
 let searchQuery = "";
 let autoSwitchTimer = null;
 
+// Timestamp of the last backward step triggered by the overlay's Shift+Q keydown handler.
+// Used to avoid double-stepping if both the keydown and the background command fire.
+let lastKeyboardBackStepTime = -Infinity;
+const KEYBOARD_STEP_DEDUPE_MS = 150;
+
 // Calculate how many tabs can fit in the current window width
 function getMaxTabsForWidth() {
   const windowWidth = window.innerWidth;
@@ -40,20 +45,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       const maxTabs = getMaxTabsForWidth();
       const limitedTabs = currentTabs.slice(0, maxTabs);
       currentTabs = limitedTabs;
-      
+
+      const backward = request.direction === "backward";
+
       if (switcherVisible) {
-        // Already visible, cycle to next tab
-        const filteredTabs = getFilteredTabs();
-        if (filteredTabs.length > 0) {
-          selectedIndex = (selectedIndex + 1) % filteredTabs.length;
-          renderTabs();
-          // Reset auto-switch timer
-          startAutoSwitchTimer();
+        // Already visible, cycle to next/previous tab. Skip if the overlay's own
+        // Shift+Q keydown handler just moved the selection for this same keypress.
+        if (!(backward && performance.now() - lastKeyboardBackStepTime < KEYBOARD_STEP_DEDUPE_MS)) {
+          moveSelection(backward ? -1 : 1);
         }
       } else {
-        // Show UI immediately and start with second tab selected
-        // This mimics ctrlTab behavior where first tab shown is the previous tab
-        selectedIndex = currentTabs.length > 1 ? 1 : 0;
+        // Show UI immediately. Going forward starts with the second tab selected
+        // (mimics ctrlTab behavior where the first tab shown is the previous tab);
+        // going backward starts at the end of the list.
+        if (backward) {
+          selectedIndex = Math.max(0, currentTabs.length - 1);
+        } else {
+          selectedIndex = currentTabs.length > 1 ? 1 : 0;
+        }
         showSwitcher();
         // Start timer to auto-switch if user stops pressing the key (simulates key release)
         startAutoSwitchTimer();
@@ -109,8 +118,8 @@ function hideSwitcher() {
   }
   
   // Clean up global event listeners
-  document.removeEventListener('keydown', handleGlobalKeydown);
-  document.removeEventListener('keyup', handleGlobalKeyup);
+  document.removeEventListener('keydown', handleGlobalKeydown, true);
+  document.removeEventListener('keyup', handleGlobalKeyup, true);
   
   // Clear auto-switch timer
   if (autoSwitchTimer) {
@@ -140,6 +149,18 @@ function startAutoSwitchTimer() {
       switchToTab(filteredTabs[selectedIndex].id);
     }
   }, 2000);
+}
+
+// Move the selection by `delta` (1 = next, -1 = previous), wrapping around
+function moveSelection(delta) {
+  const filteredTabs = getFilteredTabs();
+  if (filteredTabs.length === 0) return;
+
+  const count = filteredTabs.length;
+  selectedIndex = ((selectedIndex + delta) % count + count) % count;
+  renderTabs();
+  // Reset auto-switch timer
+  startAutoSwitchTimer();
 }
 
 // Render tabs in the grid
@@ -242,19 +263,25 @@ function getFilteredTabs() {
 
 // Setup event listeners
 function setupEventListeners() {
-  // Global keyboard listeners
-  document.addEventListener('keydown', handleGlobalKeydown);
-  document.addEventListener('keyup', handleGlobalKeyup);
+  // Global keyboard listeners. Registered in the capture phase so they still run
+  // even though the shortcut-blocking capture listener below stops propagation.
+  document.addEventListener('keydown', handleGlobalKeydown, true);
+  document.addEventListener('keyup', handleGlobalKeyup, true);
 }
 
 // Handle global keydown when switcher is open
 function handleGlobalKeydown(e) {
   if (!switcherVisible) return;
-  
-  // Only handle Escape - Ctrl+Q cycling is handled by background.js
+
   if (e.key === 'Escape') {
     e.preventDefault();
     hideSwitcher();
+  } else if (e.shiftKey && (e.key || '').toLowerCase() === 'q') {
+    // Shift+Q while the switcher is open moves to the previous tab.
+    // (Ctrl+Q forward cycling is handled by background.js commands.)
+    e.preventDefault();
+    lastKeyboardBackStepTime = performance.now();
+    moveSelection(-1);
   }
 }
 
@@ -349,8 +376,8 @@ function showToast(message) {
 
 // Prevent keyboard shortcuts from triggering browser actions
 document.addEventListener('keydown', (e) => {
-  // Prevent Ctrl+Q from triggering browser quit on Mac
-  if ((e.metaKey || e.ctrlKey) && e.key === 'q') {
+  // Prevent Ctrl+Q / Ctrl+Shift+Q from triggering browser quit
+  if ((e.metaKey || e.ctrlKey) && (e.key || '').toLowerCase() === 'q') {
     e.preventDefault();
     e.stopPropagation();
   }
