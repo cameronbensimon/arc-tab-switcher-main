@@ -203,11 +203,97 @@ async function copyCurrentTabURL() {
 // Listen for keyboard command
 chrome.commands.onCommand.addListener(async (command) => {
   if (command === "toggle-tab-switcher") {
-    toggleTabSwitcher();
+    toggleTabSwitcher("forward");
+  } else if (command === "cycle-tab-switcher-backward") {
+    toggleTabSwitcher("backward");
   } else if (command === "copy-url") {
     await copyCurrentTabURL();
   }
 });
+
+// Fallback modifiers to watch for release if a shortcut can't be read/parsed
+const DEFAULT_RELEASE_KEYS = ['Control', 'Meta', 'Alt'];
+
+const isMacPromise = chrome.runtime.getPlatformInfo()
+  .then(info => info.os === 'mac')
+  .catch(() => false);
+
+// Parse a shortcut string from chrome.commands.getAll() into:
+// - releaseKeys: KeyboardEvent.key names of its modifiers (excluding Shift, which is
+//   used for cycling backward), so the content script knows which keyup ends the switch
+// - keyCode: KeyboardEvent.code of the non-modifier key (e.g. "KeyS"), or null
+// Handles both "Alt+Shift+S" style and macOS glyph style ("⌥⇧S").
+function parseShortcut(shortcut, isMac) {
+  const releaseKeys = new Set();
+  let rest = shortcut || '';
+
+  // macOS glyphs
+  const glyphs = { '⌘': 'Meta', '⌃': 'Control', '⌥': 'Alt', '⇧': null };
+  for (const [glyph, key] of Object.entries(glyphs)) {
+    if (rest.includes(glyph)) {
+      if (key) releaseKeys.add(key);
+      rest = rest.split(glyph).join('');
+    }
+  }
+
+  // Word-style modifiers
+  const tokens = rest.split('+').map(t => t.trim()).filter(Boolean);
+  let mainKey = null;
+  for (const token of tokens) {
+    switch (token.toLowerCase()) {
+      case 'command':
+      case 'cmd':
+      case 'search':
+        releaseKeys.add('Meta');
+        break;
+      case 'macctrl':
+        releaseKeys.add('Control');
+        break;
+      case 'ctrl':
+      case 'control':
+        // In Chrome's shortcut syntax, "Ctrl" means Command on macOS
+        releaseKeys.add('Control');
+        if (isMac) releaseKeys.add('Meta');
+        break;
+      case 'alt':
+      case 'option':
+        releaseKeys.add('Alt');
+        break;
+      case 'shift':
+        break;
+      default:
+        mainKey = token;
+    }
+  }
+
+  let keyCode = null;
+  if (mainKey && /^[a-z]$/i.test(mainKey)) {
+    keyCode = 'Key' + mainKey.toUpperCase();
+  } else if (mainKey && /^[0-9]$/.test(mainKey)) {
+    keyCode = 'Digit' + mainKey;
+  }
+
+  return { releaseKeys: [...releaseKeys], keyCode };
+}
+
+// Get the modifiers to watch for release and the key that cycles the switcher,
+// based on the user's currently configured shortcuts
+async function getShortcutInfo(commandName) {
+  try {
+    const [commands, isMac] = await Promise.all([chrome.commands.getAll(), isMacPromise]);
+    const byName = name => commands.find(c => c.name === name);
+
+    const invoked = parseShortcut(byName(commandName)?.shortcut, isMac);
+    const forward = parseShortcut(byName('toggle-tab-switcher')?.shortcut, isMac);
+
+    return {
+      releaseKeys: invoked.releaseKeys.length ? invoked.releaseKeys : DEFAULT_RELEASE_KEYS,
+      cycleKeyCode: forward.keyCode || 'KeyQ'
+    };
+  } catch (error) {
+    return { releaseKeys: DEFAULT_RELEASE_KEYS, cycleKeyCode: 'KeyQ' };
+  }
+}
 
 // Sort tabs by MRU order
 function sortTabsByMRU(tabs) {
@@ -264,56 +350,110 @@ async function ensureContentScript(tabId) {
   }
 }
 
+// Max tabs the switcher overlay shows (content.js may show fewer on narrow windows)
+const MAX_SWITCHER_TABS = 5;
+
+// How long to wait for the content script to be ready before giving up on the
+// overlay and switching tabs directly (e.g. page still loading)
+const CONTENT_SCRIPT_TIMEOUT_MS = 300;
+
+function isRestrictedUrl(url) {
+  return !!url && (url.startsWith('chrome://') ||
+                   url.startsWith('chrome-extension://') ||
+                   url.startsWith('chrome-error://') ||
+                   url.startsWith('edge://') ||
+                   url.startsWith('about:') ||
+                   url.startsWith('view-source:') ||
+                   url.startsWith('devtools://'));
+}
+
+// Get the current window's tabs in MRU order, with the active tab first
+async function getMRUTabs(activeTab) {
+  const allTabs = await chrome.tabs.query({ windowId: activeTab.windowId });
+  const others = sortTabsByMRU(allTabs).filter(t => t.id !== activeTab.id);
+  return [activeTab, ...others];
+}
+
+// Fallback when the switcher overlay can't be shown on the current page:
+// switch directly to the tab the overlay would have pre-selected
+// (next MRU tab going forward, last tab in the switcher list going backward)
+async function switchWithoutOverlay(activeTab, direction) {
+  const tabs = (await getMRUTabs(activeTab)).slice(0, MAX_SWITCHER_TABS);
+  if (tabs.length < 2) return;
+  
+  const target = direction === "backward" ? tabs[tabs.length - 1] : tabs[1];
+  await chrome.tabs.update(target.id, { active: true });
+}
+
+// Resolve to `fallback` if the promise doesn't settle within `ms`
+function withTimeout(promise, ms, fallback) {
+  return Promise.race([
+    promise,
+    new Promise(resolve => setTimeout(() => resolve(fallback), ms))
+  ]);
+}
+
 // Toggle the tab switcher
-async function toggleTabSwitcher() {
+// direction: "forward" (next tab) or "backward" (previous tab)
+async function toggleTabSwitcher(direction = "forward") {
+  let tab;
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     
     if (!tab || !tab.id) {
       console.warn("No active tab found");
       return;
     }
 
-    // Check if tab URL is a restricted page
-    if (tab.url && (tab.url.startsWith('chrome://') || 
-                    tab.url.startsWith('chrome-extension://') ||
-                    tab.url.startsWith('edge://') ||
-                    tab.url.startsWith('about:'))) {
-      console.warn("Cannot run on restricted pages:", tab.url);
+    // Restricted pages (chrome://, etc.) can't host the overlay
+    if (isRestrictedUrl(tab.url)) {
+      await switchWithoutOverlay(tab, direction);
       return;
     }
     
-    // Ensure content script is loaded
-    const isLoaded = await ensureContentScript(tab.id);
+    // Ensure content script is loaded. If it can't be injected, or the page isn't
+    // ready in time (still loading, no DOM), switch tabs directly instead.
+    const isLoaded = await withTimeout(ensureContentScript(tab.id), CONTENT_SCRIPT_TIMEOUT_MS, false);
     if (!isLoaded) {
-      console.error("Could not load content script");
+      await switchWithoutOverlay(tab, direction);
       return;
     }
     
-    // Get all tabs in current window
-    const allTabs = await chrome.tabs.query({ currentWindow: true });
+    // Get MRU-ordered tabs, plus the configured shortcut's modifiers
+    const [sortedTabs, shortcutInfo] = await Promise.all([
+      getMRUTabs(tab),
+      getShortcutInfo(direction === "backward" ? "cycle-tab-switcher-backward" : "toggle-tab-switcher")
+    ]);
     
-    // Sort tabs by MRU order
-    const sortedTabs = sortTabsByMRU(allTabs);
-    
-    // Attach cached screenshots to tabs
-    const tabsWithScreenshots = sortedTabs.map(t => ({
+    // Attach cached screenshots to tabs (only the ones the switcher can show)
+    const tabsWithScreenshots = sortedTabs.slice(0, MAX_SWITCHER_TABS).map(t => ({
       ...t,
       screenshot: tabScreenshotCache.get(t.id) || null
     }));
     
     // Send message to content script to show/hide switcher
-    try {
-      await chrome.tabs.sendMessage(tab.id, {
-        action: "toggleSwitcher",
-        tabs: tabsWithScreenshots,
-        currentTabId: tab.id
-      });
-    } catch (messageError) {
-      console.error("Could not send message to tab:", messageError);
+    const response = await chrome.tabs.sendMessage(tab.id, {
+      action: "toggleSwitcher",
+      tabs: tabsWithScreenshots,
+      currentTabId: tab.id,
+      direction: direction,
+      releaseKeys: shortcutInfo.releaseKeys,
+      cycleKeyCode: shortcutInfo.cycleKeyCode
+    });
+    
+    // Content script couldn't render the overlay (e.g. document has no body)
+    if (!response || response.success === false) {
+      await switchWithoutOverlay(tab, direction);
     }
   } catch (error) {
-    console.error("Error toggling tab switcher:", error);
+    console.error("Error toggling tab switcher, switching directly:", error);
+    if (tab && tab.id) {
+      try {
+        await switchWithoutOverlay(tab, direction);
+      } catch (switchError) {
+        console.error("Error switching tab:", switchError);
+      }
+    }
   }
 }
 

@@ -39,6 +39,8 @@ If Ctrl+Q doesn't work or you want a different shortcut:
 4. Press your desired key combination (shift + command + C is recommended)
 5. Click the pencil icon next to "Toggle tab switcher"
 6. Press your desired key combination (control + Q or control + A is recommended)
+7. Click the pencil icon next to "Cycle tab switcher backward"
+8. Press the same combination as above with Shift added (e.g. control + shift + Q)
 
 All done!
 
@@ -52,23 +54,24 @@ The tab switcher tracks your 5 most recently used tabs and lets you cycle throug
 - Visual UI appears instantly showing your 5 most recent tabs
 - Previous tab is pre-selected (index 1)
 - Keep pressing the key combination to cycle forward through the list
-- **Release Cmd/Ctrl** to instantly switch to selected tab
-- Switcher stays open as long as you hold Cmd/Ctrl
+- **Release the modifier key** (Cmd, Ctrl, Option/Alt — whatever your shortcut uses) to instantly switch to selected tab
+- Switcher stays open as long as you hold the modifier key
 
 ### Navigation
 
 **Keyboard Controls:**
 - **Ctrl+Q** - Cycle to next tab (keep pressing to cycle through)
+- **Ctrl+Shift+Q** - Cycle to previous tab (opens the switcher on the last tab if it isn't already open)
 - **Esc** - Cancel and close (return to current tab)
 
-That's it! Just two keys.
+That's it! Just three keys.
 
 ### Tips
 
 - ⚡ UI appears **instantly** when you press your key combination like Ctrl+Q - zero delay
 - 🎨 Selected tab is highlighted with blue border
 - ✅ Current tab has a green border
-- 🔄 **Instant key release detection** - exits immediately when you release Cmd/Ctrl key
+- 🔄 **Instant key release detection** - exits immediately when you release your shortcut's modifier key
 - 🚀 **ZERO animations** - all transitions disabled for maximum speed
 - 📸 **Real page previews** - shows actual screenshots of your recent tabs
 - 💾 Smart caching - captures tabs automatically as you browse
@@ -142,7 +145,7 @@ Want to customize the appearance? Edit `styles.css`:
 - Tabs that haven't been active recently show a mock preview with favicon
 - Some Chrome internal pages (chrome://) don't allow content scripts or screenshots
 - The switcher may not work on the Chrome Web Store or other restricted pages
-- Detects Control/Command key release for instant switching
+- Detects release of your shortcut's modifier key (Ctrl, Cmd, Option/Alt) for instant switching
 - Only tracks the 5 most recent tabs (just like Arc browser)
 
 ## How It Compares to Arc/Zen

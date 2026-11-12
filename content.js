@@ -7,6 +7,80 @@ let selectedIndex = 0;
 let searchQuery = "";
 let autoSwitchTimer = null;
 
+// Timestamp of the last backward step triggered by the overlay's Shift+Q keydown handler.
+// Used to avoid double-stepping if both the keydown and the background command fire.
+let lastKeyboardBackStepTime = -Infinity;
+const KEYBOARD_STEP_DEDUPE_MS = 150;
+
+// Modifier keys (KeyboardEvent.key names) whose release commits the selected tab.
+// Provided by background.js from the user's configured shortcut (e.g. Option+S -> "Alt").
+const DEFAULT_RELEASE_KEYS = ['Control', 'Meta', 'Alt'];
+let releaseKeys = new Set(DEFAULT_RELEASE_KEYS);
+
+// KeyboardEvent.code of the switcher shortcut's key (e.g. "KeyS" for Option+S).
+// Shift + this key moves to the previous tab while the switcher is open.
+let cycleKeyCode = 'KeyQ';
+
+// Track modifier key state at all times so we can tell if the user already released
+// the modifier before the switcher message arrived from the background script
+// (e.g. a quick Option+S tap to jump to the previous tab).
+const MODIFIER_KEYS = ['Control', 'Meta', 'Alt'];
+const modifierState = {}; // key -> { down: boolean, lastUp: number }
+const RECENT_RELEASE_MS = 1000;
+
+window.addEventListener('keydown', (e) => {
+  if (MODIFIER_KEYS.includes(e.key)) {
+    modifierState[e.key] = { ...modifierState[e.key], down: true };
+  }
+}, true);
+
+window.addEventListener('keyup', (e) => {
+  if (MODIFIER_KEYS.includes(e.key)) {
+    modifierState[e.key] = { down: false, lastUp: performance.now() };
+  }
+}, true);
+
+window.addEventListener('blur', () => {
+  // Keyups are missed while the page isn't focused; don't trust stale "down" state
+  for (const key of Object.keys(modifierState)) {
+    modifierState[key].down = false;
+  }
+});
+
+// True if the page saw the shortcut's modifier go down and come back up just now,
+// i.e. the user has already let go and we should switch without waiting for a keyup
+function shortcutModifierAlreadyReleased() {
+  const now = performance.now();
+  let sawRecentRelease = false;
+  for (const key of releaseKeys) {
+    const state = modifierState[key];
+    if (!state) continue;
+    if (state.down) return false;
+    if (state.lastUp !== undefined && now - state.lastUp < RECENT_RELEASE_MS) {
+      sawRecentRelease = true;
+    }
+  }
+  return sawRecentRelease;
+}
+
+// Default icon (globe) for pages without a favicon. Percent-encoded so the data URL
+// contains no raw quotes and is safe to use anywhere a URL is expected.
+const DEFAULT_FAVICON = 'data:image/svg+xml,' + encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" height="24px" width="24px" fill="#666666"><path d="M12,22q-2.07,0-3.9-0.79q-1.82-0.79-3.17-2.14Q3.58,17.73 2.79,15.9T2,12Q2,9.92 2.79,8.1Q3.58,6.27 4.93,4.93Q6.28,3.57 8.1,2.79Q9.93,2 12,2t3.9,0.79t3.17,2.14q1.35,1.35 2.14,3.17Q22,9.92 22,12t-0.79,3.9t-2.14,3.17q-1.35,1.35-3.17,2.14T12,22Zm0-2q3.35,0 5.68-2.32T20,12q0-0.18-0.01-0.36t-0.01-0.31q-0.13,0.72-0.68,1.2T18,13H16q-0.82,0-1.41-0.59T14,11V10H10V8q0-0.82 0.59-1.41T12,6h1q0-0.57 0.31-1.01t0.76-0.71q-0.5-0.13-1.01-0.2T12,4Q8.65,4 6.33,6.32T4,12H9q1.65,0 2.83,1.17T13,16v1H10v2.75q0.5,0.13 0.99,0.19T12,20Z"/></svg>'
+);
+
+// URL for a page's favicon served from Chrome's favicon cache (requires the "favicon"
+// permission). We use this instead of tab.favIconUrl because loading favIconUrl from
+// inside the current page makes the page itself fetch it, and if that URL is on
+// localhost or the local network (e.g. a dev server tab), Chrome shows the site a
+// Local Network Access permission prompt.
+function getCachedFaviconUrl(pageUrl) {
+  const url = new URL(chrome.runtime.getURL('/_favicon/'));
+  url.searchParams.set('pageUrl', pageUrl);
+  url.searchParams.set('size', '512');
+  return url.toString();
+}
+
 // Calculate how many tabs can fit in the current window width
 function getMaxTabsForWidth() {
   const windowWidth = window.innerWidth;
@@ -40,20 +114,49 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       const maxTabs = getMaxTabsForWidth();
       const limitedTabs = currentTabs.slice(0, maxTabs);
       currentTabs = limitedTabs;
-      
+
+      const backward = request.direction === "backward";
+      const requestReleaseKeys = request.releaseKeys && request.releaseKeys.length
+        ? request.releaseKeys
+        : DEFAULT_RELEASE_KEYS;
+      cycleKeyCode = request.cycleKeyCode || 'KeyQ';
+
       if (switcherVisible) {
-        // Already visible, cycle to next tab
-        const filteredTabs = getFilteredTabs();
-        if (filteredTabs.length > 0) {
-          selectedIndex = (selectedIndex + 1) % filteredTabs.length;
-          renderTabs();
-          // Reset auto-switch timer
-          startAutoSwitchTimer();
+        // Forward and backward shortcuts may use different modifiers; watch both
+        requestReleaseKeys.forEach(key => releaseKeys.add(key));
+        // Already visible, cycle to next/previous tab. Skip if the overlay's own
+        // Shift+Q keydown handler just moved the selection for this same keypress.
+        if (!(backward && performance.now() - lastKeyboardBackStepTime < KEYBOARD_STEP_DEDUPE_MS)) {
+          moveSelection(backward ? -1 : 1);
         }
       } else {
-        // Show UI immediately and start with second tab selected
-        // This mimics ctrlTab behavior where first tab shown is the previous tab
-        selectedIndex = currentTabs.length > 1 ? 1 : 0;
+        releaseKeys = new Set(requestReleaseKeys);
+
+        // Going forward starts with the second tab selected (mimics ctrlTab behavior
+        // where the first tab shown is the previous tab); going backward starts at
+        // the end of the list.
+        if (backward) {
+          selectedIndex = Math.max(0, currentTabs.length - 1);
+        } else {
+          selectedIndex = currentTabs.length > 1 ? 1 : 0;
+        }
+
+        // If the modifier was already released before this message arrived,
+        // switch right away instead of showing the overlay
+        if (shortcutModifierAlreadyReleased() && currentTabs[selectedIndex]) {
+          switchToTab(currentTabs[selectedIndex].id);
+          sendResponse({ success: true });
+          return true;
+        }
+
+        // No DOM to render into (e.g. non-HTML document); let the background
+        // script fall back to switching tabs directly
+        if (!document.body) {
+          sendResponse({ success: false, error: "No document body to render switcher" });
+          return true;
+        }
+
+        // Show UI immediately
         showSwitcher();
         // Start timer to auto-switch if user stops pressing the key (simulates key release)
         startAutoSwitchTimer();
@@ -109,8 +212,8 @@ function hideSwitcher() {
   }
   
   // Clean up global event listeners
-  document.removeEventListener('keydown', handleGlobalKeydown);
-  document.removeEventListener('keyup', handleGlobalKeyup);
+  document.removeEventListener('keydown', handleGlobalKeydown, true);
+  document.removeEventListener('keyup', handleGlobalKeyup, true);
   
   // Clear auto-switch timer
   if (autoSwitchTimer) {
@@ -140,6 +243,18 @@ function startAutoSwitchTimer() {
       switchToTab(filteredTabs[selectedIndex].id);
     }
   }, 2000);
+}
+
+// Move the selection by `delta` (1 = next, -1 = previous), wrapping around
+function moveSelection(delta) {
+  const filteredTabs = getFilteredTabs();
+  if (filteredTabs.length === 0) return;
+
+  const count = filteredTabs.length;
+  selectedIndex = ((selectedIndex + delta) % count + count) % count;
+  renderTabs();
+  // Reset auto-switch timer
+  startAutoSwitchTimer();
 }
 
 // Render tabs in the grid
@@ -178,42 +293,35 @@ function renderTabs() {
     const title = tab.title || 'Untitled';
     const displayTitle = title.length > 30 ? title.substring(0, 27) + '...' : title;
     
-    // Use real screenshot if available, otherwise create mock preview
-    let previewSrc;
-    if (tab.screenshot) {
-      previewSrc = tab.screenshot;
-    } else {
-      // Create a canvas-based preview that looks like a page
-      const favicon = tab.favIconUrl || 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" fill="%23ddd"/></svg>';
-      previewSrc = `data:image/svg+xml,${encodeURIComponent(`
-        <svg xmlns="http://www.w3.org/2000/svg" width="200" height="125" viewBox="0 0 200 125">
-          <rect width="200" height="125" fill="#ffffff"/>
-          <rect x="15" y="15" width="50" height="6" fill="#333" opacity="0.6"/>
-          <rect x="15" y="28" width="170" height="4" fill="#333" opacity="0.3"/>
-          <rect x="15" y="36" width="160" height="4" fill="#333" opacity="0.3"/>
-          <rect x="15" y="44" width="140" height="4" fill="#333" opacity="0.3"/>
-          <rect x="15" y="60" width="90" height="8" fill="#e5e7eb" rx="2"/>
-          <rect x="110" y="60" width="75" height="8" fill="#e5e7eb" rx="2"/>
-          <image href="${favicon}" x="15" y="15" width="20" height="20"/>
-        </svg>
-      `)}`;
-    }
-    
     // Get favicon URL or use default
-    const faviconUrl = tab.favIconUrl || 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" fill="%23888"/></svg>';
-    
+    const faviconUrl = tab.favIconUrl && tab.url ? getCachedFaviconUrl(tab.url) : DEFAULT_FAVICON;
+
     tabCard.innerHTML = `
-      <div class="arc-tab-preview">
-        <img src="${previewSrc}" alt="">
-      </div>
+      <div class="arc-tab-preview"></div>
       <div class="arc-tab-info">
         <div class="arc-tab-title">
-          <img class="arc-tab-favicon" src="${faviconUrl}" alt="">
+          <img class="arc-tab-favicon" alt="">
           <span>${escapeHtml(displayTitle)}</span>
         </div>
       </div>
     `;
-    
+
+    // Set image sources via DOM properties (not HTML string interpolation) so
+    // quotes or other special characters in the URLs can't break the markup
+    setFaviconSrc(tabCard.querySelector('.arc-tab-favicon'), faviconUrl);
+
+    // Preview: the real screenshot if we have one, otherwise the favicon centered
+    // at its natural size (scaled down only if it's larger than the preview area)
+    const previewImg = document.createElement('img');
+    previewImg.alt = '';
+    if (tab.screenshot) {
+      previewImg.src = tab.screenshot;
+    } else {
+      previewImg.className = 'arc-tab-preview-favicon';
+      setFaviconSrc(previewImg, faviconUrl);
+    }
+    tabCard.querySelector('.arc-tab-preview').appendChild(previewImg);
+
     tabCard.dataset.tabIndex = index;
     
     grid.appendChild(tabCard);
@@ -242,19 +350,26 @@ function getFilteredTabs() {
 
 // Setup event listeners
 function setupEventListeners() {
-  // Global keyboard listeners
-  document.addEventListener('keydown', handleGlobalKeydown);
-  document.addEventListener('keyup', handleGlobalKeyup);
+  // Global keyboard listeners. Registered in the capture phase so they still run
+  // even though the shortcut-blocking capture listener below stops propagation.
+  document.addEventListener('keydown', handleGlobalKeydown, true);
+  document.addEventListener('keyup', handleGlobalKeyup, true);
 }
 
 // Handle global keydown when switcher is open
 function handleGlobalKeydown(e) {
   if (!switcherVisible) return;
-  
-  // Only handle Escape - Ctrl+Q cycling is handled by background.js
+
   if (e.key === 'Escape') {
     e.preventDefault();
     hideSwitcher();
+  } else if (e.shiftKey && e.code === cycleKeyCode) {
+    // Shift + the switcher shortcut's key (Q by default) moves to the previous tab.
+    // Matched by e.code because modifiers like Option change e.key (Option+Shift+Q = "Œ").
+    // (Forward cycling is handled by background.js commands.)
+    e.preventDefault();
+    lastKeyboardBackStepTime = performance.now();
+    moveSelection(-1);
   }
 }
 
@@ -262,8 +377,9 @@ function handleGlobalKeydown(e) {
 function handleGlobalKeyup(e) {
   if (!switcherVisible) return;
   
-  // When Control or Meta (Command) key is released, immediately switch to selected tab
-  if (e.key === 'Control' || e.key === 'Meta') {
+  // When the shortcut's modifier (Ctrl, Cmd, Option/Alt, ...) is released,
+  // immediately switch to the selected tab
+  if (releaseKeys.has(e.key)) {
     e.preventDefault();
     const filteredTabs = getFilteredTabs();
     if (filteredTabs[selectedIndex]) {
@@ -288,6 +404,16 @@ function switchToTab(tabId) {
     }
     hideSwitcher();
   });
+}
+
+// Set a favicon <img> source, falling back to the default icon if it fails to load
+function setFaviconSrc(img, url) {
+  img.addEventListener('error', () => {
+    if (img.src !== DEFAULT_FAVICON) {
+      img.src = DEFAULT_FAVICON;
+    }
+  });
+  img.src = url;
 }
 
 // Escape HTML to prevent XSS
@@ -349,8 +475,8 @@ function showToast(message) {
 
 // Prevent keyboard shortcuts from triggering browser actions
 document.addEventListener('keydown', (e) => {
-  // Prevent Ctrl+Q from triggering browser quit on Mac
-  if ((e.metaKey || e.ctrlKey) && e.key === 'q') {
+  // Prevent Ctrl+Q / Ctrl+Shift+Q from triggering browser quit
+  if ((e.metaKey || e.ctrlKey) && (e.key || '').toLowerCase() === 'q') {
     e.preventDefault();
     e.stopPropagation();
   }

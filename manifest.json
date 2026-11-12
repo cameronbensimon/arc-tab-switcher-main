@@ -7,7 +7,14 @@
     "tabs",
     "scripting",
     "activeTab",
-    "clipboardWrite"
+    "clipboardWrite",
+    "favicon"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["_favicon/*"],
+      "matches": ["<all_urls>"]
+    }
   ],
   "host_permissions": [
     "<all_urls>"
@@ -31,6 +38,13 @@
         "mac": "Command+Q"
       },
       "description": "Toggle tab switcher"
+    },
+    "cycle-tab-switcher-backward": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Q",
+        "mac": "Command+Shift+Q"
+      },
+      "description": "Cycle tab switcher backward"
     },
     "copy-url": {
       "suggested_key": {
