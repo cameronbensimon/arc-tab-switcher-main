@@ -63,6 +63,12 @@ function shortcutModifierAlreadyReleased() {
   return sawRecentRelease;
 }
 
+// Default icon (globe) for pages without a favicon. Percent-encoded so the data URL
+// contains no raw quotes and is safe to use anywhere a URL is expected.
+const DEFAULT_FAVICON = 'data:image/svg+xml,' + encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" height="24px" width="24px" fill="#666666"><path d="M12,22q-2.07,0-3.9-0.79q-1.82-0.79-3.17-2.14Q3.58,17.73 2.79,15.9T2,12Q2,9.92 2.79,8.1Q3.58,6.27 4.93,4.93Q6.28,3.57 8.1,2.79Q9.93,2 12,2t3.9,0.79t3.17,2.14q1.35,1.35 2.14,3.17Q22,9.92 22,12t-0.79,3.9t-2.14,3.17q-1.35,1.35-3.17,2.14T12,22Zm0-2q3.35,0 5.68-2.32T20,12q0-0.18-0.01-0.36t-0.01-0.31q-0.13,0.72-0.68,1.2T18,13H16q-0.82,0-1.41-0.59T14,11V10H10V8q0-0.82 0.59-1.41T12,6h1q0-0.57 0.31-1.01t0.76-0.71q-0.5-0.13-1.01-0.2T12,4Q8.65,4 6.33,6.32T4,12H9q1.65,0 2.83,1.17T13,16v1H10v2.75q0.5,0.13 0.99,0.19T12,20Z"/></svg>'
+);
+
 // Calculate how many tabs can fit in the current window width
 function getMaxTabsForWidth() {
   const windowWidth = window.innerWidth;
@@ -217,7 +223,7 @@ function startAutoSwitchTimer() {
     if (filteredTabs[selectedIndex]) {
       switchToTab(filteredTabs[selectedIndex].id);
     }
-  }, 2000);
+  }, 200000);
 }
 
 // Move the selection by `delta` (1 = next, -1 = previous), wrapping around
@@ -268,42 +274,35 @@ function renderTabs() {
     const title = tab.title || 'Untitled';
     const displayTitle = title.length > 30 ? title.substring(0, 27) + '...' : title;
     
-    // Use real screenshot if available, otherwise create mock preview
-    let previewSrc;
-    if (tab.screenshot) {
-      previewSrc = tab.screenshot;
-    } else {
-      // Create a canvas-based preview that looks like a page
-      const favicon = tab.favIconUrl || 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" fill="%23ddd"/></svg>';
-      previewSrc = `data:image/svg+xml,${encodeURIComponent(`
-        <svg xmlns="http://www.w3.org/2000/svg" width="200" height="125" viewBox="0 0 200 125">
-          <rect width="200" height="125" fill="#ffffff"/>
-          <rect x="15" y="15" width="50" height="6" fill="#333" opacity="0.6"/>
-          <rect x="15" y="28" width="170" height="4" fill="#333" opacity="0.3"/>
-          <rect x="15" y="36" width="160" height="4" fill="#333" opacity="0.3"/>
-          <rect x="15" y="44" width="140" height="4" fill="#333" opacity="0.3"/>
-          <rect x="15" y="60" width="90" height="8" fill="#e5e7eb" rx="2"/>
-          <rect x="110" y="60" width="75" height="8" fill="#e5e7eb" rx="2"/>
-          <image href="${favicon}" x="15" y="15" width="20" height="20"/>
-        </svg>
-      `)}`;
-    }
-    
     // Get favicon URL or use default
-    const faviconUrl = tab.favIconUrl || 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" fill="%23888"/></svg>';
-    
+    const faviconUrl = tab.favIconUrl || DEFAULT_FAVICON;
+
     tabCard.innerHTML = `
-      <div class="arc-tab-preview">
-        <img src="${previewSrc}" alt="">
-      </div>
+      <div class="arc-tab-preview"></div>
       <div class="arc-tab-info">
         <div class="arc-tab-title">
-          <img class="arc-tab-favicon" src="${faviconUrl}" alt="">
+          <img class="arc-tab-favicon" alt="">
           <span>${escapeHtml(displayTitle)}</span>
         </div>
       </div>
     `;
-    
+
+    // Set image sources via DOM properties (not HTML string interpolation) so
+    // quotes or other special characters in the URLs can't break the markup
+    setFaviconSrc(tabCard.querySelector('.arc-tab-favicon'), faviconUrl);
+
+    // Preview: the real screenshot if we have one, otherwise the favicon centered
+    // at its natural size (scaled down only if it's larger than the preview area)
+    const previewImg = document.createElement('img');
+    previewImg.alt = '';
+    if (tab.screenshot) {
+      previewImg.src = tab.screenshot;
+    } else {
+      previewImg.className = 'arc-tab-preview-favicon';
+      setFaviconSrc(previewImg, faviconUrl);
+    }
+    tabCard.querySelector('.arc-tab-preview').appendChild(previewImg);
+
     tabCard.dataset.tabIndex = index;
     
     grid.appendChild(tabCard);
@@ -386,6 +385,16 @@ function switchToTab(tabId) {
     }
     hideSwitcher();
   });
+}
+
+// Set a favicon <img> source, falling back to the default icon if it fails to load
+function setFaviconSrc(img, url) {
+  img.addEventListener('error', () => {
+    if (img.src !== DEFAULT_FAVICON) {
+      img.src = DEFAULT_FAVICON;
+    }
+  });
+  img.src = url;
 }
 
 // Escape HTML to prevent XSS

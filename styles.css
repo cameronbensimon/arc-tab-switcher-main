@@ -163,6 +163,19 @@
   display: block;
 }
 
+/* Favicon shown centered in the preview when there's no screenshot.
+   Natural size, only scaled down if larger than the preview area
+   (centering comes from the .arc-tab-preview flex container). */
+.arc-tab-preview img.arc-tab-preview-favicon {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  object-fit: contain !important;
+  display: block !important;
+  background: none !important;
+}
+
 .arc-tab-favicon-large {
   display: none;
 }
