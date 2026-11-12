@@ -69,6 +69,18 @@ const DEFAULT_FAVICON = 'data:image/svg+xml,' + encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" height="24px" width="24px" fill="#666666"><path d="M12,22q-2.07,0-3.9-0.79q-1.82-0.79-3.17-2.14Q3.58,17.73 2.79,15.9T2,12Q2,9.92 2.79,8.1Q3.58,6.27 4.93,4.93Q6.28,3.57 8.1,2.79Q9.93,2 12,2t3.9,0.79t3.17,2.14q1.35,1.35 2.14,3.17Q22,9.92 22,12t-0.79,3.9t-2.14,3.17q-1.35,1.35-3.17,2.14T12,22Zm0-2q3.35,0 5.68-2.32T20,12q0-0.18-0.01-0.36t-0.01-0.31q-0.13,0.72-0.68,1.2T18,13H16q-0.82,0-1.41-0.59T14,11V10H10V8q0-0.82 0.59-1.41T12,6h1q0-0.57 0.31-1.01t0.76-0.71q-0.5-0.13-1.01-0.2T12,4Q8.65,4 6.33,6.32T4,12H9q1.65,0 2.83,1.17T13,16v1H10v2.75q0.5,0.13 0.99,0.19T12,20Z"/></svg>'
 );
 
+// URL for a page's favicon served from Chrome's favicon cache (requires the "favicon"
+// permission). We use this instead of tab.favIconUrl because loading favIconUrl from
+// inside the current page makes the page itself fetch it, and if that URL is on
+// localhost or the local network (e.g. a dev server tab), Chrome shows the site a
+// Local Network Access permission prompt.
+function getCachedFaviconUrl(pageUrl) {
+  const url = new URL(chrome.runtime.getURL('/_favicon/'));
+  url.searchParams.set('pageUrl', pageUrl);
+  url.searchParams.set('size', '512');
+  return url.toString();
+}
+
 // Calculate how many tabs can fit in the current window width
 function getMaxTabsForWidth() {
   const windowWidth = window.innerWidth;
@@ -282,7 +294,7 @@ function renderTabs() {
     const displayTitle = title.length > 30 ? title.substring(0, 27) + '...' : title;
     
     // Get favicon URL or use default
-    const faviconUrl = tab.favIconUrl || DEFAULT_FAVICON;
+    const faviconUrl = tab.favIconUrl && tab.url ? getCachedFaviconUrl(tab.url) : DEFAULT_FAVICON;
 
     tabCard.innerHTML = `
       <div class="arc-tab-preview"></div>
