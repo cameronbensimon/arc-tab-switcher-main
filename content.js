@@ -12,6 +12,57 @@ let autoSwitchTimer = null;
 let lastKeyboardBackStepTime = -Infinity;
 const KEYBOARD_STEP_DEDUPE_MS = 150;
 
+// Modifier keys (KeyboardEvent.key names) whose release commits the selected tab.
+// Provided by background.js from the user's configured shortcut (e.g. Option+S -> "Alt").
+const DEFAULT_RELEASE_KEYS = ['Control', 'Meta', 'Alt'];
+let releaseKeys = new Set(DEFAULT_RELEASE_KEYS);
+
+// KeyboardEvent.code of the switcher shortcut's key (e.g. "KeyS" for Option+S).
+// Shift + this key moves to the previous tab while the switcher is open.
+let cycleKeyCode = 'KeyQ';
+
+// Track modifier key state at all times so we can tell if the user already released
+// the modifier before the switcher message arrived from the background script
+// (e.g. a quick Option+S tap to jump to the previous tab).
+const MODIFIER_KEYS = ['Control', 'Meta', 'Alt'];
+const modifierState = {}; // key -> { down: boolean, lastUp: number }
+const RECENT_RELEASE_MS = 1000;
+
+window.addEventListener('keydown', (e) => {
+  if (MODIFIER_KEYS.includes(e.key)) {
+    modifierState[e.key] = { ...modifierState[e.key], down: true };
+  }
+}, true);
+
+window.addEventListener('keyup', (e) => {
+  if (MODIFIER_KEYS.includes(e.key)) {
+    modifierState[e.key] = { down: false, lastUp: performance.now() };
+  }
+}, true);
+
+window.addEventListener('blur', () => {
+  // Keyups are missed while the page isn't focused; don't trust stale "down" state
+  for (const key of Object.keys(modifierState)) {
+    modifierState[key].down = false;
+  }
+});
+
+// True if the page saw the shortcut's modifier go down and come back up just now,
+// i.e. the user has already let go and we should switch without waiting for a keyup
+function shortcutModifierAlreadyReleased() {
+  const now = performance.now();
+  let sawRecentRelease = false;
+  for (const key of releaseKeys) {
+    const state = modifierState[key];
+    if (!state) continue;
+    if (state.down) return false;
+    if (state.lastUp !== undefined && now - state.lastUp < RECENT_RELEASE_MS) {
+      sawRecentRelease = true;
+    }
+  }
+  return sawRecentRelease;
+}
+
 // Calculate how many tabs can fit in the current window width
 function getMaxTabsForWidth() {
   const windowWidth = window.innerWidth;
@@ -47,22 +98,40 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       currentTabs = limitedTabs;
 
       const backward = request.direction === "backward";
+      const requestReleaseKeys = request.releaseKeys && request.releaseKeys.length
+        ? request.releaseKeys
+        : DEFAULT_RELEASE_KEYS;
+      cycleKeyCode = request.cycleKeyCode || 'KeyQ';
 
       if (switcherVisible) {
+        // Forward and backward shortcuts may use different modifiers; watch both
+        requestReleaseKeys.forEach(key => releaseKeys.add(key));
         // Already visible, cycle to next/previous tab. Skip if the overlay's own
         // Shift+Q keydown handler just moved the selection for this same keypress.
         if (!(backward && performance.now() - lastKeyboardBackStepTime < KEYBOARD_STEP_DEDUPE_MS)) {
           moveSelection(backward ? -1 : 1);
         }
       } else {
-        // Show UI immediately. Going forward starts with the second tab selected
-        // (mimics ctrlTab behavior where the first tab shown is the previous tab);
-        // going backward starts at the end of the list.
+        releaseKeys = new Set(requestReleaseKeys);
+
+        // Going forward starts with the second tab selected (mimics ctrlTab behavior
+        // where the first tab shown is the previous tab); going backward starts at
+        // the end of the list.
         if (backward) {
           selectedIndex = Math.max(0, currentTabs.length - 1);
         } else {
           selectedIndex = currentTabs.length > 1 ? 1 : 0;
         }
+
+        // If the modifier was already released before this message arrived,
+        // switch right away instead of showing the overlay
+        if (shortcutModifierAlreadyReleased() && currentTabs[selectedIndex]) {
+          switchToTab(currentTabs[selectedIndex].id);
+          sendResponse({ success: true });
+          return true;
+        }
+
+        // Show UI immediately
         showSwitcher();
         // Start timer to auto-switch if user stops pressing the key (simulates key release)
         startAutoSwitchTimer();
@@ -276,9 +345,10 @@ function handleGlobalKeydown(e) {
   if (e.key === 'Escape') {
     e.preventDefault();
     hideSwitcher();
-  } else if (e.shiftKey && (e.key || '').toLowerCase() === 'q') {
-    // Shift+Q while the switcher is open moves to the previous tab.
-    // (Ctrl+Q forward cycling is handled by background.js commands.)
+  } else if (e.shiftKey && e.code === cycleKeyCode) {
+    // Shift + the switcher shortcut's key (Q by default) moves to the previous tab.
+    // Matched by e.code because modifiers like Option change e.key (Option+Shift+Q = "Œ").
+    // (Forward cycling is handled by background.js commands.)
     e.preventDefault();
     lastKeyboardBackStepTime = performance.now();
     moveSelection(-1);
@@ -289,8 +359,9 @@ function handleGlobalKeydown(e) {
 function handleGlobalKeyup(e) {
   if (!switcherVisible) return;
   
-  // When Control or Meta (Command) key is released, immediately switch to selected tab
-  if (e.key === 'Control' || e.key === 'Meta') {
+  // When the shortcut's modifier (Ctrl, Cmd, Option/Alt, ...) is released,
+  // immediately switch to the selected tab
+  if (releaseKeys.has(e.key)) {
     e.preventDefault();
     const filteredTabs = getFilteredTabs();
     if (filteredTabs[selectedIndex]) {

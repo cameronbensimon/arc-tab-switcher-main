@@ -211,6 +211,90 @@ chrome.commands.onCommand.addListener(async (command) => {
   }
 });
 
+// Fallback modifiers to watch for release if a shortcut can't be read/parsed
+const DEFAULT_RELEASE_KEYS = ['Control', 'Meta', 'Alt'];
+
+const isMacPromise = chrome.runtime.getPlatformInfo()
+  .then(info => info.os === 'mac')
+  .catch(() => false);
+
+// Parse a shortcut string from chrome.commands.getAll() into:
+// - releaseKeys: KeyboardEvent.key names of its modifiers (excluding Shift, which is
+//   used for cycling backward), so the content script knows which keyup ends the switch
+// - keyCode: KeyboardEvent.code of the non-modifier key (e.g. "KeyS"), or null
+// Handles both "Alt+Shift+S" style and macOS glyph style ("⌥⇧S").
+function parseShortcut(shortcut, isMac) {
+  const releaseKeys = new Set();
+  let rest = shortcut || '';
+
+  // macOS glyphs
+  const glyphs = { '⌘': 'Meta', '⌃': 'Control', '⌥': 'Alt', '⇧': null };
+  for (const [glyph, key] of Object.entries(glyphs)) {
+    if (rest.includes(glyph)) {
+      if (key) releaseKeys.add(key);
+      rest = rest.split(glyph).join('');
+    }
+  }
+
+  // Word-style modifiers
+  const tokens = rest.split('+').map(t => t.trim()).filter(Boolean);
+  let mainKey = null;
+  for (const token of tokens) {
+    switch (token.toLowerCase()) {
+      case 'command':
+      case 'cmd':
+      case 'search':
+        releaseKeys.add('Meta');
+        break;
+      case 'macctrl':
+        releaseKeys.add('Control');
+        break;
+      case 'ctrl':
+      case 'control':
+        // In Chrome's shortcut syntax, "Ctrl" means Command on macOS
+        releaseKeys.add('Control');
+        if (isMac) releaseKeys.add('Meta');
+        break;
+      case 'alt':
+      case 'option':
+        releaseKeys.add('Alt');
+        break;
+      case 'shift':
+        break;
+      default:
+        mainKey = token;
+    }
+  }
+
+  let keyCode = null;
+  if (mainKey && /^[a-z]$/i.test(mainKey)) {
+    keyCode = 'Key' + mainKey.toUpperCase();
+  } else if (mainKey && /^[0-9]$/.test(mainKey)) {
+    keyCode = 'Digit' + mainKey;
+  }
+
+  return { releaseKeys: [...releaseKeys], keyCode };
+}
+
+// Get the modifiers to watch for release and the key that cycles the switcher,
+// based on the user's currently configured shortcuts
+async function getShortcutInfo(commandName) {
+  try {
+    const [commands, isMac] = await Promise.all([chrome.commands.getAll(), isMacPromise]);
+    const byName = name => commands.find(c => c.name === name);
+
+    const invoked = parseShortcut(byName(commandName)?.shortcut, isMac);
+    const forward = parseShortcut(byName('toggle-tab-switcher')?.shortcut, isMac);
+
+    return {
+      releaseKeys: invoked.releaseKeys.length ? invoked.releaseKeys : DEFAULT_RELEASE_KEYS,
+      cycleKeyCode: forward.keyCode || 'KeyQ'
+    };
+  } catch (error) {
+    return { releaseKeys: DEFAULT_RELEASE_KEYS, cycleKeyCode: 'KeyQ' };
+  }
+}
+
 // Sort tabs by MRU order
 function sortTabsByMRU(tabs) {
   // Create a map of tab IDs to tab objects for quick lookup
@@ -293,8 +377,11 @@ async function toggleTabSwitcher(direction = "forward") {
       return;
     }
     
-    // Get all tabs in current window
-    const allTabs = await chrome.tabs.query({ currentWindow: true });
+    // Get all tabs in current window, plus the configured shortcut's modifiers
+    const [allTabs, shortcutInfo] = await Promise.all([
+      chrome.tabs.query({ currentWindow: true }),
+      getShortcutInfo(direction === "backward" ? "cycle-tab-switcher-backward" : "toggle-tab-switcher")
+    ]);
     
     // Sort tabs by MRU order
     const sortedTabs = sortTabsByMRU(allTabs);
@@ -311,7 +398,9 @@ async function toggleTabSwitcher(direction = "forward") {
         action: "toggleSwitcher",
         tabs: tabsWithScreenshots,
         currentTabId: tab.id,
-        direction: direction
+        direction: direction,
+        releaseKeys: shortcutInfo.releaseKeys,
+        cycleKeyCode: shortcutInfo.cycleKeyCode
       });
     } catch (messageError) {
       console.error("Could not send message to tab:", messageError);
